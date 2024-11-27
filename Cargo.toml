@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 hound = "3.5.1"
 ndarray = "0.16.1"
+plotters = "0.3.7"
