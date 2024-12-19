@@ -2,6 +2,25 @@ use hound;
 use plotters::prelude::*;
 use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
 use std::f64::consts::PI;
+use statrs::statistics::{Data, Min, Max, Median, OrderStatistics, Distribution};
+
+#[derive(Debug)]
+struct Stats{
+    min: f64,
+    max: f64,
+    mean: f64,
+    median: f64,
+    q1: f64,
+    q3: f64,
+    variance: f64,
+    std: f64,
+    skewness: f64,
+    kurtosis: f64,
+    energy: f64, // whole energy of the signal – how intensive the sound is
+    rms: f64,
+    crest_factor: f64, // how big is the peak compared to the rest of the signal
+    zcr: f64, // how many times the signal crosses the x axis
+}
 
 fn load_wav(file_path: &str) -> (Vec<i16>, u32) {
     let reader = hound::WavReader::open(file_path).expect("Failed to open WAV file");
@@ -14,7 +33,6 @@ fn load_wav(file_path: &str) -> (Vec<i16>, u32) {
 
     (samples, spec.sample_rate)
 }
-
 
 fn get_known_signal(sample_rate: u32, duration: f64) -> Vec<i16> {
     /*sample_rate – samples per sec
@@ -60,8 +78,6 @@ fn plot_signal(samples: &Vec<i16>, file_path: &str) {
         .expect("Failed to draw mesh");
 
     // draw wave
-    
-
     chart
         .draw_series(LineSeries::new(
             samples.iter().enumerate().map(|(x, &y)| (x as i32, y as i32)),
@@ -105,38 +121,90 @@ fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) -> R
         .margin(10)
         .x_label_area_size(30)
         .y_label_area_size(30)
-        .build_cartesian_2d(0f64..max_frequency, 0f64..max_magnitude)?;
+        .build_cartesian_2d(0f64..max_frequency, 0f64..max_magnitude)
+        .expect("Failed to build chart");
 
     chart.configure_mesh()
         .x_labels(10)
         .y_labels(5)
         .x_desc("Frequency (Hz)")
         .y_desc("Magnitude")
-        .draw()?;
+        .draw()
+        .expect("Failed to draw mesh");
 
     chart.draw_series(LineSeries::new(
         frequencies.into_iter().zip(magnitudes.into_iter()),
         &RED,
-    ))?;
-
+    )).expect("Failed to draw series");
+    
     root.present()?;
     Ok(())
 }
 
-fn main() {
-    // let file_path = "./data/ESC-50-master/audio/1-137-A-32.wav";
+fn compute_statistics(samples:  &[i16]) -> Stats {
+    let samples_f64: Vec<_> = samples.iter().map(|&x| x as f64).collect();
+    let mut data = Data::new(samples_f64);
     
-    // let (samples, sample_rate) = load_wav(file_path);
-    // println!("Loaded {} samples with sample rate {}.", samples.len(), sample_rate);
+    let mean =  data.mean().expect("Failed to calculate mean");
+    let variance = data.variance().expect("Failed to calculate variance");
+    let max = data.max();
 
-    let sample_rate = 4110;
-    let samples = get_known_signal(sample_rate, 1.0);
+    let n = samples.len() as f64;
+    let fourth_moment = samples.iter().map(|&x| (x as f64 - mean).powi(4)).sum::<f64>() / n;
+    let third_moment = samples.iter().map(|&x| (x as f64 - mean).powi(3)).sum::<f64>() / n;
+
+    let energy = samples.iter().map(|&x| ((x as f64).powi(2))).sum::<f64>();
+    let rms = (energy / samples.len() as f64).sqrt();    
+
+    let zcr = samples
+        .windows(2)
+        .filter(|window| (window[0] > 0) != (window[1] > 0))
+        .count() as f64 / n;
+
+    Stats{
+        min: data.min(),
+        max,
+        mean,
+        variance,
+        std: data.std_dev().expect("Failed to calculate std"),
+        median: data.median(),
+        q1: data.percentile(25),
+        q3: data.percentile(75),
+        skewness: third_moment / variance.powi(3),
+        kurtosis: fourth_moment / variance.powi(2),
+        energy,
+        rms,
+        crest_factor: max / rms,
+        zcr
+    }
+}
+
+fn main() {
+    let file_path = "./data/ESC-50-master/audio/1-137-A-32.wav";
+    
+    let (samples, sample_rate) = load_wav(file_path);
+    println!("Loaded {} samples with sample rate {}.", samples.len(), sample_rate);
+
+    // let sample_rate = 4110;
+    // let samples = get_known_signal(sample_rate, 1.0);
 
     plot_signal(&samples, "out/waveform.png");
 
-    let spectrum = compute_fft(&samples);
+    // let spectrum = compute_fft(&samples);
+    // println!("Computed FFT spectrum.");
+    // plot_fft(&spectrum, sample_rate, "out/fft.png").expect("Failed to plot FFT");
 
-    println!("Computed FFT spectrum. {}", spectrum[0]);
-    plot_fft(&spectrum, sample_rate, "out/fft.png").expect("Failed to plot FFT");
+    let window_size = 1024; // sample_rate (44.1 kHz) * 23 ms rounded to a multiple of 2
+    let step_size = window_size / 2;    // overlap
+
+    let windows: Vec<_> = samples
+        .windows(window_size)
+        .step_by(step_size)
+        .collect();
+
+    let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
+    println!("{:?}", stats[0]);
+
     
+
 }
