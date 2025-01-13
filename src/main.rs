@@ -1,8 +1,15 @@
 use hound;
 use plotters::prelude::*;
 use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
+use smartcore::linalg::traits::stats::MatrixStats;
 use std::f64::consts::PI;
 use statrs::statistics::{Data, Min, Max, Median, OrderStatistics, Distribution};
+
+use smartcore::linalg::basic::matrix::DenseMatrix;
+use smartcore::neighbors::knn_classifier::{KNNClassifier, KNNClassifierParameters};
+use smartcore::model_selection::train_test_split;
+use smartcore::metrics::accuracy;
+
 
 #[derive(Debug)]
 struct Stats{
@@ -22,7 +29,29 @@ struct Stats{
     zcr: f64, // how many times the signal crosses the x axis
 }
 
+impl Stats {
+    fn to_vec(&self) -> Vec<f64> {
+        vec![
+            self.min,
+            self.max,
+            self.mean,
+            self.median,
+            self.q1,
+            self.q3,
+            self.variance,
+            self.std,
+            self.skewness,
+            self.kurtosis,
+            self.energy,
+            self.rms,
+            self.crest_factor,
+            self.zcr
+        ]
+    }
+}
+
 fn load_wav(file_path: &str) -> (Vec<i16>, u32) {
+    /* Load file into samples */
     let reader = hound::WavReader::open(file_path).expect("Failed to open WAV file");
     let spec = reader.spec();
 
@@ -35,8 +64,9 @@ fn load_wav(file_path: &str) -> (Vec<i16>, u32) {
 }
 
 fn get_known_signal(sample_rate: u32, duration: f64) -> Vec<i16> {
-    /*sample_rate – samples per sec
-    duration – s */
+    /* Get sum of 2 sinus waves for debugging purposes
+    @param sample_rate – samples per sec
+    @param duration – s */
 
     let num_samples = (sample_rate as f64 * duration) as usize;
     let mut signal = Vec::with_capacity(num_samples);
@@ -56,6 +86,7 @@ fn get_known_signal(sample_rate: u32, duration: f64) -> Vec<i16> {
 }
 
 fn plot_signal(samples: &Vec<i16>, file_path: &str) {
+    /* Plot waveform of the signal */
     let root = BitMapBackend::new(file_path, (1200, 900)).into_drawing_area();
     root.fill(&WHITE).expect("Failed to fill drawing area");
 
@@ -89,6 +120,7 @@ fn plot_signal(samples: &Vec<i16>, file_path: &str) {
 }
 
 fn compute_fft(samples: &Vec<i16>) -> Vec<Complex<f64>> {
+    /* Compute FFT of the signal */
     let samples: Vec<Complex<f64>> = samples.iter().map(|&s| Complex::new(s as f64, 0.0)).collect();
 
     let mut planner = FftPlanner::new();
@@ -101,6 +133,7 @@ fn compute_fft(samples: &Vec<i16>) -> Vec<Complex<f64>> {
 }
 
 fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) -> Result<(), Box<dyn std::error::Error>> {
+    /* Plot FFT spectrum */
     let num_samples = fft_data.len();
     let frequencies: Vec<f64> = (0..num_samples / 2)
         .map(|i| i as f64 * sample_rate as f64 / num_samples as f64) // formula for the frequency of each sample
@@ -142,6 +175,8 @@ fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) -> R
 }
 
 fn compute_statistics(samples:  &[i16]) -> Stats {
+    /* Compute statistics of the signal */
+
     let samples_f64: Vec<_> = samples.iter().map(|&x| x as f64).collect();
     let mut data = Data::new(samples_f64);
     
@@ -154,9 +189,9 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
     let third_moment = samples.iter().map(|&x| (x as f64 - mean).powi(3)).sum::<f64>() / n;
 
     let energy = samples.iter().map(|&x| ((x as f64).powi(2))).sum::<f64>();
-    let rms = (energy / samples.len() as f64).sqrt();    
+    let rms = (energy / samples.len() as f64).sqrt(); // root mean square – mean energy of the sound
 
-    let zcr = samples
+    let zcr = samples //zero crossing rate – how many times the signal crosses the x axis
         .windows(2)
         .filter(|window| (window[0] > 0) != (window[1] > 0))
         .count() as f64 / n;
@@ -177,6 +212,16 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
         crest_factor: max / rms,
         zcr
     }
+}
+
+fn train_model(x: DenseMatrix<f64>, y: Vec<u32>) {
+    let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
+    let knn = KNNClassifier::fit(&x_train, &y_train, KNNClassifierParameters::default()).unwrap();
+
+    let y_pred = knn.predict(&x_test).unwrap();
+    let accuracy = accuracy(&y_test, &y_pred);
+
+    println!("Accuracy: {:.2}", accuracy);
 }
 
 fn main() {
@@ -205,6 +250,28 @@ fn main() {
     let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
     println!("{:?}", stats[0]);
 
+    // let x: Vec<Vec<f64>> = stats.iter().map(|s| s.to_vec()).collect();
+    // let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
+
+    let mut x = DenseMatrix::from_2d_array(&[
+        &[2.771244718, 1.784783929, 1.467537373],
+        &[1.728571309, 1.169761413, 1.039941406],
+        &[3.678319846, 2.812683004, 2.240515132],
+        &[3.961043357, 2.619950020, 2.687259456],
+        &[2.771244718, 1.784783929, 1.467537373],
+        &[1.728571309, 1.169761413, 1.039941406],
+        &[3.678319846, 2.812683004, 2.240515132],
+        &[3.961043357, 2.619950020, 2.687259456],
+        &[2.771244718, 1.784783929, 1.467537373],
+        &[1.728571309, 1.169761413, 1.039941406],
+        &[3.678319846, 2.812683004, 2.240515132],
+        &[3.961043357, 2.619950020, 2.687259456]
+    ]).unwrap();
+
+    x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
+    let y = vec![0,0,1,1, 0,0,1,1, 0,0,1,1];
+
+    train_model(x, y);
     
 
 }
