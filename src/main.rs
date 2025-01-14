@@ -35,11 +35,11 @@ struct Stats{
     q3: f64,
     variance: f64,
     std: f64,
-    // skewness: f64,
-    // kurtosis: f64,
+    skewness: f64,
+    kurtosis: f64,
     energy: f64, // whole energy of the signal – how intensive the sound is
     rms: f64,
-    // crest_factor: f64, // how big is the peak compared to the rest of the signal
+    crest_factor: f64, // how big is the peak compared to the rest of the signal
     zcr: f64, // how many times the signal crosses the x axis
 }
 
@@ -54,11 +54,11 @@ impl Stats {
             self.q3,
             self.variance,
             self.std,
-            // self.skewness,
-            // self.kurtosis,
+            self.skewness,
+            self.kurtosis,
             self.energy,
             self.rms,
-            // self.crest_factor,
+            self.crest_factor,
             self.zcr
         ]
     }
@@ -210,7 +210,12 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
         .filter(|window| (window[0] > 0) != (window[1] > 0))
         .count() as f64 / n;
 
-    let stats = Stats{
+    // variance is 0 e.g. for constant 0 signals
+    let skewness = if variance == 0.0 { 0.0 } else { third_moment / variance.powi(3) };
+    let kurtosis = if variance == 0.0 { 3.0 } else { fourth_moment / variance.powi(2) }; // uniform treated as perfect normal
+    let crest_factor = if variance == 0.0 { 0.0 } else { max / rms }; // no crests in 0 signal
+
+    Stats{
         min: data.min(),
         max,
         mean,
@@ -219,49 +224,17 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
         median: data.median(),
         q1: data.percentile(25),
         q3: data.percentile(75),
-        // skewness: third_moment / variance.powi(3),
-        // kurtosis: fourth_moment / variance.powi(2),
+        skewness: skewness,
+        kurtosis: kurtosis,
         energy,
         rms,
-        // crest_factor: max / rms,
+        crest_factor: crest_factor,
         zcr
-    };
-
-    // Debugging: Print fields that are NaN or Infinite
-    let fields = vec![
-        ("min", stats.min),
-        ("max", stats.max),
-        ("mean", stats.mean),
-        ("variance", stats.variance),
-        ("std", stats.std),
-        ("median", stats.median),
-        ("q1", stats.q1),
-        ("q3", stats.q3),
-        // ("skewness", stats.skewness),
-        // ("kurtosis", stats.kurtosis),
-        ("energy", stats.energy),
-        ("rms", stats.rms),
-        // ("crest_factor", stats.crest_factor),
-        ("zcr", stats.zcr),
-    ];
-
-    for (name, value) in fields {
-        if value.is_nan() {
-            println!("{} is NaN", name);
-        } else if value.is_infinite() {
-            println!("{} is Infinite", name);
-        }
     }
-
-    stats
 }
 
 fn train_model(x: DenseMatrix<f64>, y: Vec<u8>) {
-    // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
-    let x_train = x.clone();
-    let y_train = y.clone();
-    let x_test = x;
-    let y_test = y;
+    let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
 
     let knn = KNNClassifier::fit(&x_train, &y_train, KNNClassifierParameters::default()).unwrap();
 
