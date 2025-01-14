@@ -11,6 +11,7 @@ use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::neighbors::knn_classifier::{KNNClassifier, KNNClassifierParameters};
 use smartcore::model_selection::train_test_split;
 use smartcore::metrics::accuracy;
+use std::fs;
 
 
 const CLASSES: [&str; 50] = [
@@ -34,11 +35,11 @@ struct Stats{
     q3: f64,
     variance: f64,
     std: f64,
-    skewness: f64,
-    kurtosis: f64,
+    // skewness: f64,
+    // kurtosis: f64,
     energy: f64, // whole energy of the signal – how intensive the sound is
     rms: f64,
-    crest_factor: f64, // how big is the peak compared to the rest of the signal
+    // crest_factor: f64, // how big is the peak compared to the rest of the signal
     zcr: f64, // how many times the signal crosses the x axis
 }
 
@@ -53,11 +54,11 @@ impl Stats {
             self.q3,
             self.variance,
             self.std,
-            self.skewness,
-            self.kurtosis,
+            // self.skewness,
+            // self.kurtosis,
             self.energy,
             self.rms,
-            self.crest_factor,
+            // self.crest_factor,
             self.zcr
         ]
     }
@@ -209,7 +210,7 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
         .filter(|window| (window[0] > 0) != (window[1] > 0))
         .count() as f64 / n;
 
-    Stats{
+    let stats = Stats{
         min: data.min(),
         max,
         mean,
@@ -218,13 +219,41 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
         median: data.median(),
         q1: data.percentile(25),
         q3: data.percentile(75),
-        skewness: third_moment / variance.powi(3),
-        kurtosis: fourth_moment / variance.powi(2),
+        // skewness: third_moment / variance.powi(3),
+        // kurtosis: fourth_moment / variance.powi(2),
         energy,
         rms,
-        crest_factor: max / rms,
+        // crest_factor: max / rms,
         zcr
+    };
+
+    // Debugging: Print fields that are NaN or Infinite
+    let fields = vec![
+        ("min", stats.min),
+        ("max", stats.max),
+        ("mean", stats.mean),
+        ("variance", stats.variance),
+        ("std", stats.std),
+        ("median", stats.median),
+        ("q1", stats.q1),
+        ("q3", stats.q3),
+        // ("skewness", stats.skewness),
+        // ("kurtosis", stats.kurtosis),
+        ("energy", stats.energy),
+        ("rms", stats.rms),
+        // ("crest_factor", stats.crest_factor),
+        ("zcr", stats.zcr),
+    ];
+
+    for (name, value) in fields {
+        if value.is_nan() {
+            println!("{} is NaN", name);
+        } else if value.is_infinite() {
+            println!("{} is Infinite", name);
+        }
     }
+
+    stats
 }
 
 fn train_model(x: DenseMatrix<f64>, y: Vec<u8>) {
@@ -243,51 +272,66 @@ fn train_model(x: DenseMatrix<f64>, y: Vec<u8>) {
 }
 
 fn main() {
-    let file_path = Path::new("./data/ESC-50-master/audio/");
+    let dir_path = Path::new("./data/ESC-50-master/audio/");
     let mut x: Vec<Vec<f64>> = Vec::new();
     let mut y: Vec<u8> = Vec::new();
 
-    let filename = "1-137-A-32.wav";
-    
-    let (samples, sample_rate) = load_wav(&file_path.join(filename));
-    println!("Loaded {} samples with sample rate {}.", samples.len(), sample_rate);
+    let entries = fs::read_dir(dir_path).expect("Failed to read directory");
 
-    // let sample_rate = 4110;
-    // let samples = get_known_signal(sample_rate, 1.0);
+    let mut i = 0;
+    for entry in entries {
 
-    plot_signal(&samples, "out/waveform.png");
-
-    // let spectrum = compute_fft(&samples);
-    // println!("Computed FFT spectrum.");
-    // plot_fft(&spectrum, sample_rate, "out/fft.png").expect("Failed to plot FFT");
-
-    let window_size = 1024; // sample_rate (44.1 kHz) * 23 ms rounded to a multiple of 2
-    let step_size = window_size / 2;    // overlap
-
-    let windows: Vec<_> = samples
-        .windows(window_size)
-        .step_by(step_size)
-        .collect();
-
-    let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
-    println!("{:?}", stats[0]);
-
-    let mut stats_flattened = Vec::new();
-    for stat in stats {
-        stats_flattened.extend(stat.to_vec());
-    }
-
-    x.push(stats_flattened);
+        let entry = entry.expect("Failed to get entry");
+        let file_path = entry.path();
         
-    let class: u8 = filename[..&filename.len()-4] // remove .wav
-    .split('-').last().unwrap() // get last part of the filename
-    .parse().expect("Cannot get class number from the filename."); // parse to u8
-
-    y.push(class);
+        let (samples, sample_rate) = load_wav(&file_path);
+        println!("Loaded {} samples with sample rate {} from file {}.", samples.len(), sample_rate, file_path.display());
     
-    let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
-    // x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
+        // plot_signal(&samples, "out/waveform.png");
+    
+        // let spectrum = compute_fft(&samples);
+        // println!("Computed FFT spectrum.");
+        // plot_fft(&spectrum, sample_rate, "out/fft.png").expect("Failed to plot FFT");
+    
+        // calculate statistics for moving windows
+        let window_size = 1024; // sample_rate (44.1 kHz) * 23 ms rounded to a multiple of 2
+        let step_size = window_size / 2;    // overlap
+    
+        let windows: Vec<_> = samples
+            .windows(window_size)
+            .step_by(step_size)
+            .collect();
+    
+        let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
+    
+        let mut stats_flattened = Vec::new();
+        for stat in stats {
+            stats_flattened.extend(stat.to_vec());
+        }
+    
+        x.push(stats_flattened);
+            
+        // get class number from the filename
+        let filename = file_path.file_name().unwrap().to_str().unwrap();
 
-    // train_model(x, y);
+        let class: u8 = filename[..&filename.len()-4] // remove .wav
+        .split('-').last().unwrap() // get last part of the filename
+        .parse().expect("Cannot get class number from the filename."); // parse to u8
+    
+        y.push(class);
+
+        i += 1;
+        if i == 20 {
+            break;
+        }
+    }
+    let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
+    if x.iter().any(|&i| i.is_nan() || i.is_infinite()) {
+        panic!["Data contains NaN or Infinite values"];
+    }
+    x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
+
+    train_model(x, y);
+    
 
 }
