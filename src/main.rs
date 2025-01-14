@@ -2,14 +2,27 @@ use hound;
 use plotters::prelude::*;
 use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
 use smartcore::linalg::traits::stats::MatrixStats;
+use std::arch::x86_64;
 use std::f64::consts::PI;
 use statrs::statistics::{Data, Min, Max, Median, OrderStatistics, Distribution};
+use std::path::Path;
 
 use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::neighbors::knn_classifier::{KNNClassifier, KNNClassifierParameters};
 use smartcore::model_selection::train_test_split;
 use smartcore::metrics::accuracy;
 
+
+const CLASSES: [&str; 50] = [
+        "dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects (flying)", "sheep", "crow",
+        "rain", "sea waves", "crackling fire", "crickets", "chirping birds", "water drops", "wind",
+        "pouring water", "toilet flush", "thunderstorm", "crying baby", "sneezing", "clapping",
+        "breathing", "coughing", "footsteps", "laughing", "brushing teeth", "snoring",
+        "drinking - sipping", "door knock", "mouse click", "keyboard typing", "door, wood creaks",
+        "can opening", "washing machine", "vacuum cleaner", "clock alarm", "clock tick",
+        "glass breaking", "helicopter", "chainsaw", "siren", "car horn", "engine", "train",
+        "church bells", "air plane", "fireworks", "hand saw"
+    ];
 
 #[derive(Debug)]
 struct Stats{
@@ -50,7 +63,7 @@ impl Stats {
     }
 }
 
-fn load_wav(file_path: &str) -> (Vec<i16>, u32) {
+fn load_wav(file_path: &Path) -> (Vec<i16>, u32) {
     /* Load file into samples */
     let reader = hound::WavReader::open(file_path).expect("Failed to open WAV file");
     let spec = reader.spec();
@@ -214,8 +227,13 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
     }
 }
 
-fn train_model(x: DenseMatrix<f64>, y: Vec<u32>) {
-    let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
+fn train_model(x: DenseMatrix<f64>, y: Vec<u8>) {
+    // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
+    let x_train = x.clone();
+    let y_train = y.clone();
+    let x_test = x;
+    let y_test = y;
+
     let knn = KNNClassifier::fit(&x_train, &y_train, KNNClassifierParameters::default()).unwrap();
 
     let y_pred = knn.predict(&x_test).unwrap();
@@ -225,9 +243,13 @@ fn train_model(x: DenseMatrix<f64>, y: Vec<u32>) {
 }
 
 fn main() {
-    let file_path = "./data/ESC-50-master/audio/1-137-A-32.wav";
+    let file_path = Path::new("./data/ESC-50-master/audio/");
+    let mut x: Vec<Vec<f64>> = Vec::new();
+    let mut y: Vec<u8> = Vec::new();
+
+    let filename = "1-137-A-32.wav";
     
-    let (samples, sample_rate) = load_wav(file_path);
+    let (samples, sample_rate) = load_wav(&file_path.join(filename));
     println!("Loaded {} samples with sample rate {}.", samples.len(), sample_rate);
 
     // let sample_rate = 4110;
@@ -250,28 +272,22 @@ fn main() {
     let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
     println!("{:?}", stats[0]);
 
-    // let x: Vec<Vec<f64>> = stats.iter().map(|s| s.to_vec()).collect();
-    // let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
+    let mut stats_flattened = Vec::new();
+    for stat in stats {
+        stats_flattened.extend(stat.to_vec());
+    }
 
-    let mut x = DenseMatrix::from_2d_array(&[
-        &[2.771244718, 1.784783929, 1.467537373],
-        &[1.728571309, 1.169761413, 1.039941406],
-        &[3.678319846, 2.812683004, 2.240515132],
-        &[3.961043357, 2.619950020, 2.687259456],
-        &[2.771244718, 1.784783929, 1.467537373],
-        &[1.728571309, 1.169761413, 1.039941406],
-        &[3.678319846, 2.812683004, 2.240515132],
-        &[3.961043357, 2.619950020, 2.687259456],
-        &[2.771244718, 1.784783929, 1.467537373],
-        &[1.728571309, 1.169761413, 1.039941406],
-        &[3.678319846, 2.812683004, 2.240515132],
-        &[3.961043357, 2.619950020, 2.687259456]
-    ]).unwrap();
+    x.push(stats_flattened);
+        
+    let class: u8 = filename[..&filename.len()-4] // remove .wav
+    .split('-').last().unwrap() // get last part of the filename
+    .parse().expect("Cannot get class number from the filename."); // parse to u8
 
-    x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
-    let y = vec![0,0,1,1, 0,0,1,1, 0,0,1,1];
-
-    train_model(x, y);
+    y.push(class);
     
+    let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
+    // x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
+
+    // train_model(x, y);
 
 }
