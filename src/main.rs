@@ -188,6 +188,76 @@ fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) -> R
     Ok(())
 }
 
+fn hamming_window(window: Vec<i16>) -> Vec<f64> {
+    let window_size = window.len();
+    (0..window_size)
+        .map(|n| 0.54 - 0.46 * (2.0 * std::f64::consts::PI * n as f64 / (window_size as f64 - 1.0)).cos())
+        .collect()
+}
+
+fn mel_filterbank(n_filters: usize, n_fft: usize, sample_rate: f64) -> Vec<Vec<f64>> {
+    let low_freq = hz_to_mel(0.0);
+    let high_freq = hz_to_mel(sample_rate / 2.0); // Nyquist frequency
+
+    // mel points – equally spaced in mel scale
+    let mel_points: Vec<f64> = (0..n_filters)
+        .map(|i| low_freq + (i as f64) * (high_freq - low_freq) / (n_filters + 1) as f64)
+        .collect();
+
+    // convert mel points to Hz
+    let hz_points: Vec<f64> = mel_points.iter().map(|&m| mel_to_hz(m)).collect();
+
+    // create filterbank
+    let mut filterbank = vec![vec![0.0; n_fft / 2 + 1]; n_filters];
+
+    for (i, &hz) in hz_points.iter().enumerate() {
+        let fft_bin = (hz / sample_rate * (n_fft as f64).round() / 2.0) as usize;
+        if i > 0 {
+            filterbank[i-1][fft_bin] = 1.0;
+        }
+
+    }
+
+    // plot
+    let root = BitMapBackend::new("out/filterbank.png", (1024, 768)).into_drawing_area();
+    root.fill(&WHITE).expect("Failed to fill drawing area");
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Mel Filterbank", ("sans-serif", 40))
+        .margin(10)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_cartesian_2d(0..filterbank.len() as u32, 0f64..1.0)
+        .expect("Failed to build chart");
+
+    chart.configure_mesh()
+        .x_labels(10)
+        .y_labels(5)
+        .x_desc("Filter index")
+        .y_desc("Amplitude")
+        .draw()
+        .expect("Failed to draw mesh");
+
+    for (i, filter) in filterbank.iter().enumerate() {
+        chart.draw_series(LineSeries::new(
+            filter.iter().enumerate().map(|(j, &amp)| (j as u32, amp)),
+            &Palette99::pick(i),
+        )).expect("Failed to draw series");
+    }
+
+    root.present().expect("Failed to present");
+
+    filterbank
+}
+
+fn hz_to_mel(f: f64) -> f64 {
+    1127.0 * (1.0 + f / 700.0).ln()
+}
+
+fn mel_to_hz(m: f64) -> f64 {
+    700.0 * ((m / 1127.0).exp() - 1.0)
+}
+
 fn compute_statistics(samples:  &[i16]) -> Stats {
     /* Compute statistics of the signal */
 
@@ -233,6 +303,14 @@ fn compute_statistics(samples:  &[i16]) -> Stats {
     }
 }
 
+fn compute_features(window: Vec<f64>) -> Vec<f64> {
+
+
+
+    Vec::new()
+}
+
+
 fn train_model(x: DenseMatrix<f64>, y: Vec<u8>) {
     let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.8, true, Option::None);
 
@@ -270,41 +348,49 @@ fn main() {
         let window_size = 1024; // sample_rate (44.1 kHz) * 23 ms rounded to a multiple of 2
         let step_size = window_size / 2;    // overlap
     
+
+
         let windows: Vec<_> = samples
             .windows(window_size)
             .step_by(step_size)
+            .map(|window| hamming_window)
             .collect();
+        
+        let filters = mel_filterbank(26, window_size, sample_rate as f64);
+        
     
-        let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
-    
-        let mut stats_flattened = Vec::new();
-        for stat in stats {
-            stats_flattened.extend(stat.to_vec());
-        }
-    
-        x.push(stats_flattened);
-            
-        // get class number from the filename
-        let filename = file_path.file_name().unwrap().to_str().unwrap();
+        // let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
 
-        let class: u8 = filename[..&filename.len()-4] // remove .wav
-        .split('-').last().unwrap() // get last part of the filename
-        .parse().expect("Cannot get class number from the filename."); // parse to u8
     
-        y.push(class);
+    //     let mut stats_flattened = Vec::new();
+    //     for stat in stats {
+    //         stats_flattened.extend(stat.to_vec());
+    //     }
+    
+    //     x.push(stats_flattened);
+            
+    //     // get class number from the filename
+    //     let filename = file_path.file_name().unwrap().to_str().unwrap();
+
+    //     let class: u8 = filename[..&filename.len()-4] // remove .wav
+    //     .split('-').last().unwrap() // get last part of the filename
+    //     .parse().expect("Cannot get class number from the filename."); // parse to u8
+    
+    //     y.push(class);
 
         i += 1;
-        if i == 20 {
+        if i == 1 {
             break;
         }
     }
-    let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
-    if x.iter().any(|&i| i.is_nan() || i.is_infinite()) {
-        panic!["Data contains NaN or Infinite values"];
-    }
-    x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
 
-    train_model(x, y);
+    // let mut x = DenseMatrix::from_2d_vec(&x).unwrap();
+    // if x.iter().any(|&i| i.is_nan() || i.is_infinite()) {
+    //     panic!["Data contains NaN or Infinite values"];
+    // }
+    // x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
+
+    // train_model(x, y);
     
 
 }
