@@ -1,5 +1,9 @@
+use std::time;
+
 use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
 use statrs::statistics::{Data, Min, Max, Median, OrderStatistics, Distribution};
+
+use crate::load_and_show::{plot_filterbank, plot_mel_spectrogram};
 
 #[derive(Debug)]
 pub struct Stats{
@@ -67,8 +71,8 @@ pub fn mel_filterbank(n_filters: usize, n_fft: usize, sample_rate: f64) -> Vec<V
     let high_freq = hz_to_mel(sample_rate / 2.0); // Nyquist frequency
 
     // mel points – equally spaced in mel scale
-    let mel_points: Vec<f64> = (0..n_filters)
-        .map(|i| low_freq + (i as f64) * (high_freq - low_freq) / (n_filters + 1) as f64)
+    let mel_points: Vec<f64> = (0..n_filters+1)
+        .map(|i| low_freq + (i as f64) * (high_freq - low_freq) / (n_filters + 2) as f64)
         .collect();
 
     // convert mel points to Hz
@@ -88,13 +92,91 @@ pub fn mel_filterbank(n_filters: usize, n_fft: usize, sample_rate: f64) -> Vec<V
     filterbank
 }
 
-fn hz_to_mel(f: f64) -> f64 {
+pub fn hz_to_mel(f: f64) -> f64 {
     1127.0 * (1.0 + f / 700.0).ln()
 }
 
 fn mel_to_hz(m: f64) -> f64 {
     700.0 * ((m / 1127.0).exp() - 1.0)
 }
+
+
+pub fn dct(input: &Vec<f64>) -> Vec<f64> {
+    let input_len = input.len();
+    let mut result = Vec::with_capacity(input_len);
+
+    for k in 0..input_len {
+        let mut sum = 0.0;
+        for (n, &x) in input.iter().enumerate() {
+            // println!("{} {} {} {}", x, k, n, (std::f64::consts::PI * (k as f64) * (n as f64 + 0.5) / input_len as f64));
+            sum += x * (std::f64::consts::PI * (k as f64) * (n as f64 + 0.5) / input_len as f64).cos();
+
+        }
+
+        result.push(sum);
+    }
+
+    result
+}
+
+pub fn compute_mfcc (samples: &Vec<i16>, sample_rate: u32, window_size: usize, 
+    step_size: usize, n_filters: usize, n_coeffs: usize, plot: bool) -> Vec<Vec<f64>> {
+
+    let filters = mel_filterbank(n_filters, window_size, sample_rate as f64);
+
+    if plot { plot_filterbank(&filters, sample_rate); }
+
+    let windows: Vec<_> = samples
+        .windows(window_size)
+        .step_by(step_size)
+        .map(|window| apply_hamming_window(window))
+        .collect();
+    
+    println!("Calculated {} windows of size {} with step size {}.", windows.len(), window_size, step_size);
+
+    //compute mel spectrogram
+    let mel_spectrogram  : Vec<Vec<f64>> = windows.iter() 
+        .map(|window| {        
+            let spectrum: Vec<_> = compute_fft(&window).iter()
+            .map(|s| s / window_size as f64) // normalize
+            .collect();
+            
+            // plot_signal(&window.to_vec(), "out/window.png");
+            // plot_fft(&spectrum, sample_rate, "out/sfft.png");
+            // std::thread::sleep(time::Duration::from_secs(1));
+
+            filters.iter()
+                .map(|filter| {
+                    filter.iter()
+                        .zip(&spectrum)
+                        .map(|(&f, &s)| f * s.norm()) // magnitude
+                        .sum::<f64>()
+                })
+                .map(|val| 20.0 * (val + 1e-10).log10()) //to db
+                .collect()
+            }
+        ).collect();
+    
+    if plot { plot_mel_spectrogram(&mel_spectrogram, "out/mel_spectrogram.png"); }    
+
+    let mfcc: Vec<Vec<f64>> = mel_spectrogram.iter() // windows
+        .map(|window| {
+            let dct_result = dct(window);
+
+            dct_result.into_iter()
+                .take(n_coeffs)
+                .collect()
+        })
+        .collect();
+
+    if plot { plot_mel_spectrogram(&mfcc, "out/mfcc.png"); 
+        std::thread::sleep(time::Duration::from_secs(1));
+    }
+
+    mfcc
+}
+
+
 
 pub fn compute_statistics(samples:  &[i16]) -> Stats {
     /* Compute statistics of the signal */

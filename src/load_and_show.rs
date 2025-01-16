@@ -3,6 +3,9 @@ use std::{f64::consts::PI, path::Path, sync::Arc};
 use plotters::prelude::*;
 use hound;
 use rustfft::num_complex::Complex;
+use palette::{LinSrgb, Srgb, Mix};
+
+use crate::process::hz_to_mel;
 
 
 const CLASSES: [&str; 50] = [
@@ -136,7 +139,7 @@ pub fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) 
     println!("FFT spectrum saved to {}", output_file);
 }
 
-pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>) {
+pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>, sample_rate: u32) {
     // plot
     let root = BitMapBackend::new("out/filterbank.png", (1024, 768)).into_drawing_area();
     root.fill(&WHITE).expect("Failed to fill drawing area");
@@ -146,7 +149,7 @@ pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>) {
         .margin(10)
         .x_label_area_size(30)
         .y_label_area_size(30)
-        .build_cartesian_2d(0..filterbank.len() as u32, 0f64..1.0)
+        .build_cartesian_2d(0..(filterbank[0].len() / 2) as u32, 0f64..1.0)
         .expect("Failed to build chart");
 
     chart.configure_mesh()
@@ -167,13 +170,30 @@ pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>) {
     root.present().expect("Failed to present");
 }
 
-pub fn plot_mel_spectrogram(mel_spectrogram: &Vec<Vec<f64>>) {
-    let root = BitMapBackend::new("out/mel_spectrogram.png", (1024, 768))
+fn get_color_from_palette(x: f64) -> RGBAColor{
+    /* blue -> white -> red gradient */
+    let blue = LinSrgb::new(0.0, 0.0, 1.0);
+    let white = LinSrgb::new(1.0, 1.0, 1.0);
+    let red = LinSrgb::new(1.0, 0.0, 0.0);
+
+    let color = if x < 0.5 {
+        blue.mix(white, x * 2.0) // Od niebieskiego do białego
+    } else {
+        white.mix(red, (x - 0.5) * 2.0) // Od białego do czerwonego
+    };
+
+    RGBAColor((color.red * 255.0) as u8, (color.green * 255.0) as u8, (color.blue * 255.0) as u8, 1.0)
+}
+
+
+
+pub fn plot_mel_spectrogram(mel_spectrogram: &Vec<Vec<f64>>, filename: &str) {
+    let root = BitMapBackend::new(filename, (1024, 768))
         .into_drawing_area();
     root.fill(&WHITE).expect("Failed to fill drawing area");
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("Mel Spectrogram", ("sans-serif", 40))
+        .caption(filename, ("sans-serif", 40))
         .margin(10)
         .x_label_area_size(30)
         .y_label_area_size(30)
@@ -181,30 +201,33 @@ pub fn plot_mel_spectrogram(mel_spectrogram: &Vec<Vec<f64>>) {
         .expect("Failed to build chart");
 
     chart.configure_mesh()
-        .x_desc("Time")
+        .x_desc("Window number")
         .y_desc("Mel frequency")
         .draw().expect("Failed to draw mesh");
 
     let min_value = mel_spectrogram.iter().flatten().filter(|&&value| value != f64::NEG_INFINITY).cloned().fold(f64::INFINITY, f64::min);
     let max_value = mel_spectrogram.iter().flatten().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    println!("{}, {}", min_value, max_value);
+
+
+
+
 
     chart.draw_series(
         mel_spectrogram.iter().enumerate()
-            .flat_map(|(i, row)| {
-                row.iter().enumerate().map(move |(j, &value)| {
-                    let normalised_value = (value - min_value) / (max_value - min_value) * 255.0;
+            .flat_map(|(i, row)| { // frequencies
+                row.iter().enumerate().map(move |(j, &value)| { //times
+                    let normalised_value = (value - min_value) / (max_value - min_value);
                     // print!("{} ", value);
-                    let color =  RGBAColor(
-                        (normalised_value) as u8,
-                        0,
-                        (255.0 - normalised_value) as u8, 1.0);
+                    // let color =  RGBAColor(
+                    //     (normalised_value) as u8,
+                    //     0,
+                    //     (255.0 - normalised_value) as u8, 1.0);
 
                     Rectangle::new(
                         [(i as u32, j as u32), ((i + 1) as u32, (j + 1) as u32)],
                         ShapeStyle {
-                            color: color,
+                            color: get_color_from_palette(normalised_value),
                             filled: true,
                             stroke_width: 0,
                         }
@@ -213,6 +236,6 @@ pub fn plot_mel_spectrogram(mel_spectrogram: &Vec<Vec<f64>>) {
             })
     ).expect("Failed to draw series");
 
-    println!("Mel spectrogram saved to out/mel_spectrogram.png");
+    println!("Mel spectrogram saved to {}", filename);
 
 }
