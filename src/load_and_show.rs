@@ -1,5 +1,5 @@
    
-use std::{f64::consts::PI, path::Path};
+use std::{f64::consts::PI, path::Path, sync::Arc};
 use plotters::prelude::*;
 use hound;
 use rustfft::num_complex::Complex;
@@ -55,7 +55,10 @@ fn get_known_signal(sample_rate: u32, duration: f64) -> Vec<i16> {
 
 /// plotting
 
-pub fn plot_signal(samples: &Vec<i16>, file_path: &str) {
+pub fn plot_signal<T>(samples: &Vec<T>, file_path: &str) where T: Into<f64> + Copy {
+    let min_sample = samples.iter().map(|&x| x.into()).fold(f64::INFINITY, f64::min);
+    let max_sample = samples.iter().map(|&x| x.into()).fold(f64::NEG_INFINITY, f64::max);
+
     /* Plot waveform of the signal */
     let root = BitMapBackend::new(file_path, (1200, 900)).into_drawing_area();
     root.fill(&WHITE).expect("Failed to fill drawing area");
@@ -65,7 +68,7 @@ pub fn plot_signal(samples: &Vec<i16>, file_path: &str) {
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(50)
-        .build_cartesian_2d(0..samples.len() as i32, -40000..40000)
+        .build_cartesian_2d(0.0..samples.len() as f64, min_sample..max_sample)
         .expect("Failed to build chart");
 
     // configure axis
@@ -81,7 +84,7 @@ pub fn plot_signal(samples: &Vec<i16>, file_path: &str) {
     // draw wave
     chart
         .draw_series(LineSeries::new(
-            samples.iter().enumerate().map(|(x, &y)| (x as i32, y as i32)),
+            samples.iter().enumerate().map(|(x, &y)| (x as f64, y.into())),
             &RED,
         ))
         .expect("Failed to draw series");
@@ -90,7 +93,7 @@ pub fn plot_signal(samples: &Vec<i16>, file_path: &str) {
 }
 
 
-pub fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) {
     /* Plot FFT spectrum */
     let num_samples = fft_data.len();
     let frequencies: Vec<f64> = (0..num_samples / 2)
@@ -98,11 +101,11 @@ pub fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) 
         .collect();
 
     let magnitudes: Vec<f64> = fft_data.iter()
-        .map(|c| c.norm())
+        .map(|c| c.norm()) 
         .collect();
 
     let root = BitMapBackend::new(output_file, (1024, 768)).into_drawing_area();
-    root.fill(&WHITE)?;
+    root.fill(&WHITE).expect("Failed to fill drawing area");
 
     let max_frequency = sample_rate as f64 / 2.0; // Nyquist frequency
     let max_magnitude = *magnitudes.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
@@ -128,8 +131,9 @@ pub fn plot_fft(fft_data: &[Complex<f64>], sample_rate: u32, output_file: &str) 
         &RED,
     )).expect("Failed to draw series");
     
-    root.present()?;
-    Ok(())
+    root.present().expect("Failed to present");
+
+    println!("FFT spectrum saved to {}", output_file);
 }
 
 pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>) {
@@ -161,4 +165,54 @@ pub fn plot_filterbank(filterbank: &Vec<Vec<f64>>) {
     }
 
     root.present().expect("Failed to present");
+}
+
+pub fn plot_mel_spectrogram(mel_spectrogram: &Vec<Vec<f64>>) {
+    let root = BitMapBackend::new("out/mel_spectrogram.png", (1024, 768))
+        .into_drawing_area();
+    root.fill(&WHITE).expect("Failed to fill drawing area");
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Mel Spectrogram", ("sans-serif", 40))
+        .margin(10)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_cartesian_2d(0..mel_spectrogram.len() as u32, 0..mel_spectrogram[0].len() as u32)
+        .expect("Failed to build chart");
+
+    chart.configure_mesh()
+        .x_desc("Time")
+        .y_desc("Mel frequency")
+        .draw().expect("Failed to draw mesh");
+
+    let min_value = mel_spectrogram.iter().flatten().filter(|&&value| value != f64::NEG_INFINITY).cloned().fold(f64::INFINITY, f64::min);
+    let max_value = mel_spectrogram.iter().flatten().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    println!("{}, {}", min_value, max_value);
+
+    chart.draw_series(
+        mel_spectrogram.iter().enumerate()
+            .flat_map(|(i, row)| {
+                row.iter().enumerate().map(move |(j, &value)| {
+                    let normalised_value = (value - min_value) / (max_value - min_value) * 255.0;
+                    // print!("{} ", value);
+                    let color =  RGBAColor(
+                        (normalised_value) as u8,
+                        0,
+                        (255.0 - normalised_value) as u8, 1.0);
+
+                    Rectangle::new(
+                        [(i as u32, j as u32), ((i + 1) as u32, (j + 1) as u32)],
+                        ShapeStyle {
+                            color: color,
+                            filled: true,
+                            stroke_width: 0,
+                        }
+                    )
+                })
+            })
+    ).expect("Failed to draw series");
+
+    println!("Mel spectrogram saved to out/mel_spectrogram.png");
+
 }

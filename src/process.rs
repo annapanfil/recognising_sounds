@@ -41,9 +41,9 @@ impl Stats {
 }
 
 
-pub fn compute_fft(samples: &Vec<i16>) -> Vec<Complex<f64>> {
+pub fn compute_fft(samples: &Vec<f64>) -> Vec<Complex<f64>> {
     /* Compute FFT of the signal */
-    let samples: Vec<Complex<f64>> = samples.iter().map(|&s| Complex::new(s as f64, 0.0)).collect();
+    let samples: Vec<Complex<f64>> = samples.iter().map(|&s| Complex::new(s, 0.0)).collect();
 
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft(samples.len(), FftDirection::Forward);
@@ -55,10 +55,10 @@ pub fn compute_fft(samples: &Vec<i16>) -> Vec<Complex<f64>> {
 }
 
 
-pub fn hamming_window(window: Vec<i16>) -> Vec<f64> {
+pub fn apply_hamming_window(window: &[i16]) -> Vec<f64> {
     let window_size = window.len();
     (0..window_size)
-        .map(|n| 0.54 - 0.46 * (2.0 * std::f64::consts::PI * n as f64 / (window_size as f64 - 1.0)).cos())
+        .map(|n| window[n] as f64 * (0.54 - 0.46 * (2.0 * std::f64::consts::PI * n as f64 / (window_size as f64 - 1.0)).cos()))
         .collect()
 }
 
