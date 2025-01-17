@@ -22,12 +22,14 @@ fn main() {
 
     let mut i = 0;
     for file in files {
-        
+        if i % 10 == 0 {
+            println!("Processing file number {}", i);
+        }
+
         let file = file.expect("Failed to get entry");
         let file_path = file.path();
 
         let (samples, sample_rate) = load_wav(&file_path);
-        println!("Loaded {} samples with sample rate {} from file {}.", samples.len(), sample_rate, file_path.display());
     
         // plot_signal(&samples, "out/waveform.png");
         // plot_fft(&compute_fft(&(samples.iter().map(|&s| s as f64)).collect()), sample_rate, "out/fft.png");
@@ -44,7 +46,6 @@ fn main() {
         .collect();
 
         let stats: Vec<_> = windows.iter().map(|&w| compute_statistics(w)).collect();
-
     
         let mut features_flat = Vec::new();
         for (window_mfcc, stats) in mfcc.iter().zip(stats) {
@@ -52,9 +53,8 @@ fn main() {
             features_flat.push(stats.zcr);
         }
     
-        println!("Features: {}", features_flat.len());
         x.push(features_flat);
-            
+        
         
         let class: u8 = get_class_name(&file_path);
         y.push(class);

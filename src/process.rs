@@ -108,7 +108,6 @@ pub fn dct(input: &Vec<f64>) -> Vec<f64> {
     for k in 0..input_len {
         let mut sum = 0.0;
         for (n, &x) in input.iter().enumerate() {
-            // println!("{} {} {} {}", x, k, n, (std::f64::consts::PI * (k as f64) * (n as f64 + 0.5) / input_len as f64));
             sum += x * (std::f64::consts::PI * (k as f64) * (n as f64 + 0.5) / input_len as f64).cos();
 
         }
@@ -173,7 +172,6 @@ pub fn compute_mfcc (samples: &Vec<i16>, sample_rate: u32, window_size: usize,
 
     mfcc
 }
-
 
 
 pub fn compute_statistics(samples:  &[i16]) -> Stats {
