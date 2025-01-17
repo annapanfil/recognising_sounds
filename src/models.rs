@@ -6,6 +6,7 @@ use smartcore::metrics::accuracy;
 
 use rand::prelude::*;
 
+use crate::load_and_show::CLASSES;
 
 
 fn stratified_sampling(x: &Vec<Vec<f64>>, y: &Vec<u8>, train_perc: f32) -> (DenseMatrix<f64>, DenseMatrix<f64>, Vec<u8>, Vec<u8>) {
@@ -66,6 +67,17 @@ fn standard_scaling(x: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
         .collect()
 }
 
+fn make_confusion_matrix(y_true: &Vec<u8>, y_pred: &Vec<u8>) -> [[u8; CLASSES.len()]; CLASSES.len()] {
+    let mut cm = [[0; CLASSES.len()]; CLASSES.len()];
+
+    for (&true_label, &pred_label) in y_true.iter().zip(y_pred.iter()) {
+        cm[true_label as usize][pred_label as usize] += 1;
+    }
+
+    cm
+}
+
+
 
 pub fn train_model(x: Vec<Vec<f64>>, y: Vec<u8>) {
 
@@ -73,12 +85,22 @@ pub fn train_model(x: Vec<Vec<f64>>, y: Vec<u8>) {
     let (x_train, x_test, y_train, y_test) = stratified_sampling(&scaled_x, &y, 0.8);
 
     let knn = KNNClassifier::fit(&x_train, &y_train, KNNClassifierParameters::default()).unwrap();
-    
 
     let y_pred = knn.predict(&x_test).unwrap();
     let accuracy = accuracy(&y_test, &y_pred);
+    let cm = make_confusion_matrix(&y_test, &y_pred);
+
     println!("Accuracy: {:.2}", accuracy);
+
+    for row in cm.iter() {
+        for &value in row.iter() {
+            print!("{} ", value);
+        }
+        println!(); 
+    }
+
 }
+
 
 #[cfg(test)]
 mod tests {

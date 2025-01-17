@@ -1,14 +1,12 @@
    
-use std::{f64::consts::PI, path::Path, sync::Arc};
+use std::{f64::consts::PI, path::Path};
 use plotters::prelude::*;
 use hound;
 use rustfft::num_complex::Complex;
-use palette::{LinSrgb, Srgb, Mix};
-
-use crate::process::hz_to_mel;
+use palette::{LinSrgb, Mix};
 
 
-const CLASSES: [&str; 50] = [
+pub const CLASSES: [&str; 50] = [
         "dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects (flying)", "sheep", "crow",
         "rain", "sea waves", "crackling fire", "crickets", "chirping birds", "water drops", "wind",
         "pouring water", "toilet flush", "thunderstorm", "crying baby", "sneezing", "clapping",
