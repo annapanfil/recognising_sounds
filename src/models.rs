@@ -1,10 +1,13 @@
+use std::collections::HashSet;
+use std::hash::Hash;
+
 use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::neighbors::knn_classifier::{KNNClassifier, KNNClassifierParameters};
 use smartcore::model_selection::train_test_split;
 use smartcore::metrics::accuracy;
 use smartcore::linalg::traits::stats::MatrixStats;
 
-
+use rand::prelude::*;
 
 pub fn train_model(x: Vec<Vec<f64>>, y: Vec<u8>) {
 
@@ -12,6 +15,7 @@ pub fn train_model(x: Vec<Vec<f64>>, y: Vec<u8>) {
     if x.iter().any(|&i| i.is_nan() || i.is_infinite()) {
         panic!["Data contains NaN or Infinite values"];
     }
+
     x.standard_scale_mut(&x.mean(0), &x.std(0), 0);
 
 

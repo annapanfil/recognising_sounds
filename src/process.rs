@@ -1,4 +1,4 @@
-use std::time;
+use std::{path::PathBuf, time};
 
 use rustfft::{FftPlanner, num_complex::Complex, FftDirection};
 use statrs::statistics::{Data, Min, Max, Median, OrderStatistics, Distribution};
@@ -20,11 +20,11 @@ pub struct Stats{
     energy: f64, // whole energy of the signal – how intensive the sound is
     rms: f64,
     crest_factor: f64, // how big is the peak compared to the rest of the signal
-    zcr: f64, // how many times the signal crosses the x axis
+    pub zcr: f64, // how many times the signal crosses the x axis
 }
 
 impl Stats {
-    fn to_vec(&self) -> Vec<f64> {
+    pub fn to_vec(&self) -> Vec<f64> {
         vec![
             self.min,
             self.max,
@@ -132,8 +132,6 @@ pub fn compute_mfcc (samples: &Vec<i16>, sample_rate: u32, window_size: usize,
         .map(|window| apply_hamming_window(window))
         .collect();
     
-    println!("Calculated {} windows of size {} with step size {}.", windows.len(), window_size, step_size);
-
     //compute mel spectrogram
     let mel_spectrogram  : Vec<Vec<f64>> = windows.iter() 
         .map(|window| {        
@@ -223,9 +221,15 @@ pub fn compute_statistics(samples:  &[i16]) -> Stats {
     }
 }
 
-pub fn compute_features(window: Vec<f64>) -> Vec<f64> {
 
+pub fn get_class_name(file_path: &PathBuf) -> u8 {
+    // get class number from the filename
 
+    let filename = file_path.file_name().unwrap().to_str().unwrap();
 
-    Vec::new()
+    let class: u8 = filename[..&filename.len()-4] // remove .wav
+    .split('-').last().unwrap() // get last part of the filename
+    .parse().expect("Cannot get class number from the filename."); // parse to u8
+
+    class
 }
